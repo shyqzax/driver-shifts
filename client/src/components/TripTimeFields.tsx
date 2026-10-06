@@ -1,79 +1,93 @@
-import { useCallback, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { useCallback } from "react";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useShallow } from "zustand/react/shallow";
-import { dayOffsetOf, formatClockTime, LAST_END_MINUTE } from "../domain/freeTime";
-import { useTripTimeOptions } from "../hooks/useTripTimeOptions";
+import { maskTimeInput } from "../domain/timeInput";
+import { useTripTimeCheck } from "../hooks/useTripTimeCheck";
 import { useAppStore } from "../store/useAppStore";
-import { spacing } from "../theme";
-import { TimePicker } from "./TimePicker";
+import { colors, fontSize, radius, spacing } from "../theme";
 
-type OpenPicker = "start" | "end" | null;
+interface TimeFieldProps {
+  label: string;
+  value: string;
+  placeholder: string;
+  error?: string;
+  hint?: string;
+  onChange: (value: string) => void;
+}
 
-function describeEndLimit(latestEnd: number | null): string | undefined {
-  if (latestEnd === null || latestEnd >= LAST_END_MINUTE) return undefined;
-  const day = dayOffsetOf(latestEnd) > 0 ? " следующего дня" : "";
-  return `Свободно до ${formatClockTime(latestEnd)}${day} — дальше следующая поездка`;
+/** Поле времени: вводятся только цифры, двоеточие после часов ставится само. */
+function TimeField({ label, value, placeholder, error, hint, onChange }: TimeFieldProps) {
+  const handleChangeText = useCallback((raw: string) => onChange(maskTimeInput(raw, value)), [onChange, value]);
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={handleChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textMuted}
+        keyboardType="number-pad"
+        maxLength={5}
+        style={[styles.input, error ? styles.inputInvalid : null]}
+        accessibilityLabel={label}
+      />
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {!error && hint ? <Text style={styles.hint}>{hint}</Text> : null}
+    </View>
+  );
 }
 
 export function TripTimeFields() {
-  const { startOptions, endOptions, latestEnd, suggestedStartHour } = useTripTimeOptions();
-  const { startMinute, endMinute, startError, endError } = useAppStore(
+  const { startTime, endTime, endsNextDay, serverStartError, serverEndError } = useAppStore(
     useShallow((state) => ({
-      startMinute: state.draft?.startMinute ?? null,
-      endMinute: state.draft?.endMinute ?? null,
-      startError: state.draftErrors.start,
-      endError: state.draftErrors.end,
+      startTime: state.draft?.startTime ?? "",
+      endTime: state.draft?.endTime ?? "",
+      endsNextDay: state.draft?.endsNextDay ?? false,
+      serverStartError: state.draftErrors.start,
+      serverEndError: state.draftErrors.end,
     }))
   );
   const updateDraft = useAppStore((state) => state.updateDraft);
-  // Какой выбор раскрыт — забота экрана, а не данных поездки
-  const [openPicker, setOpenPicker] = useState<OpenPicker>("start");
+  const timeCheck = useTripTimeCheck();
 
-  const toggleStart = useCallback(() => setOpenPicker((current) => (current === "start" ? null : "start")), []);
-  const toggleEnd = useCallback(() => setOpenPicker((current) => (current === "end" ? null : "end")), []);
-  const chooseStart = useCallback(
-    (minuteValue: number) => {
-      updateDraft({ startMinute: minuteValue });
-      setOpenPicker("end");
-    },
+  const changeStart = useCallback((value: string) => updateDraft({ startTime: value }), [updateDraft]);
+  const changeEnd = useCallback((value: string) => updateDraft({ endTime: value }), [updateDraft]);
+  const toggleEndsNextDay = useCallback(
+    () => updateDraft({ endsNextDay: !useAppStore.getState().draft?.endsNextDay }),
     [updateDraft]
   );
-  const chooseEnd = useCallback(
-    (minuteValue: number) => {
-      updateDraft({ endMinute: minuteValue });
-      setOpenPicker(null);
-    },
-    [updateDraft]
-  );
-
-  const hasStart = startMinute !== null;
 
   return (
     <View style={styles.container}>
-      <TimePicker
-        label="Начало"
-        value={startMinute}
-        options={startOptions}
-        isOpen={openPicker === "start"}
-        placeholder="Выбрать время"
-        error={startError}
-        suggestedHour={suggestedStartHour}
-        onToggle={toggleStart}
-        onChange={chooseStart}
-      />
-      <TimePicker
-        label="Окончание"
-        value={endMinute}
-        options={endOptions}
-        isOpen={openPicker === "end" && hasStart}
-        disabled={!hasStart}
-        placeholder={hasStart ? "Выбрать время" : "Сначала выберите начало"}
-        hint={describeEndLimit(latestEnd)}
-        error={endError}
-        suggestedHour={startMinute !== null ? Math.floor((startMinute + 1) / 60) : undefined}
-        onToggle={toggleEnd}
-        onChange={chooseEnd}
-      />
+      <View style={styles.row}>
+        <TimeField
+          label="Начало"
+          value={startTime}
+          placeholder="08:10"
+          error={timeCheck.errors.start ?? serverStartError}
+          onChange={changeStart}
+        />
+        <TimeField
+          label="Окончание"
+          value={endTime}
+          placeholder="08:32"
+          error={timeCheck.errors.end ?? serverEndError}
+          hint={timeCheck.endHint}
+          onChange={changeEnd}
+        />
+      </View>
+
+      <Pressable
+        onPress={toggleEndsNextDay}
+        style={styles.checkboxRow}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: endsNextDay }}
+      >
+        <View style={[styles.checkbox, endsNextDay && styles.checkboxChecked]}>
+          {endsNextDay ? <Text style={styles.checkmark}>✓</Text> : null}
+        </View>
+        <Text style={styles.checkboxLabel}>Закончилась после полуночи</Text>
+      </Pressable>
     </View>
   );
 }
@@ -81,5 +95,68 @@ export function TripTimeFields() {
 const styles = StyleSheet.create({
   container: {
     gap: spacing.md,
+  },
+  row: {
+    flexDirection: "row",
+    gap: spacing.md,
+    alignItems: "flex-start",
+  },
+  field: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  label: {
+    fontSize: fontSize.caption,
+    color: colors.textMuted,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: fontSize.title,
+    color: colors.text,
+    minHeight: 44,
+  },
+  inputInvalid: {
+    borderColor: colors.danger,
+  },
+  errorText: {
+    fontSize: fontSize.caption,
+    color: colors.danger,
+  },
+  hint: {
+    fontSize: fontSize.caption,
+    color: colors.textMuted,
+  },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.textMuted,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  checkmark: {
+    color: colors.onAccent,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  checkboxLabel: {
+    fontSize: fontSize.body,
+    color: colors.text,
   },
 });

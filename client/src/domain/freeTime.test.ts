@@ -2,12 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   busyRangesOfDay,
   dayOffsetOf,
+  describeRange,
   formatClockTime,
-  freeEndMinutes,
-  freeStartMinutes,
-  groupByHour,
-  isEndStillAllowed,
   latestEndMinute,
+  overlappingRange,
+  rangeContaining,
   toMinuteRanges,
 } from "./freeTime";
 
@@ -61,73 +60,60 @@ describe("занятое время при редактировании", () => 
   });
 });
 
-describe("варианты начала", () => {
-  it("пустой день — все минуты с 00:00 до 23:59", () => {
-    const free = freeStartMinutes([]);
-    expect(free).toHaveLength(1440);
-    expect(free[0]).toBe(0);
-    expect(free.at(-1)).toBe(1439);
-  });
+describe("занято ли время", () => {
+  const ranges = [
+    { from: -30, to: 20 },
+    { from: at(12), to: at(12, 25) },
+  ];
 
-  it("минуты внутри поездки скрыты, минута её окончания свободна", () => {
-    const free = freeStartMinutes([{ from: at(12), to: at(12, 25) }]);
-    expect(free).not.toContain(at(12));
-    expect(free).not.toContain(at(12, 24));
-    expect(free).toContain(at(11, 59));
-    expect(free).toContain(at(12, 25));
+  it("минута внутри поездки занята, минута её окончания свободна", () => {
+    expect(rangeContaining(at(12), ranges)).toEqual({ from: at(12), to: at(12, 25) });
+    expect(rangeContaining(at(12, 24), ranges)).toBeDefined();
+    expect(rangeContaining(at(12, 25), ranges)).toBeUndefined();
+    expect(rangeContaining(at(11, 59), ranges)).toBeUndefined();
   });
 
   it("ночная поездка со вчера занимает начало дня", () => {
-    const free = freeStartMinutes([{ from: -30, to: 20 }]);
-    expect(free[0]).toBe(20);
+    expect(rangeContaining(10, ranges)).toEqual({ from: -30, to: 20 });
+    expect(rangeContaining(20, ranges)).toBeUndefined();
+  });
+
+  it("пересечение промежутков: внахлёст — да, встык — нет", () => {
+    expect(overlappingRange(at(11, 30), at(12, 5), ranges)).toEqual({ from: at(12), to: at(12, 25) });
+    expect(overlappingRange(at(11, 30), at(12), ranges)).toBeUndefined();
+    expect(overlappingRange(at(12, 25), at(12, 40), ranges)).toBeUndefined();
+    expect(overlappingRange(at(11), at(13), ranges)).toBeDefined();
   });
 });
 
-describe("варианты окончания", () => {
+describe("до какого времени свободно", () => {
   const ranges = [{ from: at(12), to: at(12, 25) }];
 
-  it("ограничены началом следующей поездки, встык можно", () => {
+  it("до начала следующей поездки", () => {
     expect(latestEndMinute(at(11, 30), ranges)).toBe(at(12));
-    const free = freeEndMinutes(at(11, 30), ranges);
-    expect(free[0]).toBe(at(11, 31));
-    expect(free.at(-1)).toBe(at(12));
   });
 
-  it("после последней поездки дня можно закончить и после полуночи", () => {
-    const free = freeEndMinutes(at(23, 40), ranges);
-    expect(free).toContain(1440 + 15);
-    expect(free.at(-1)).toBe(2 * 1440 - 1);
+  it("после последней поездки — до конца следующего дня", () => {
+    expect(latestEndMinute(at(23, 40), ranges)).toBe(2 * 1440 - 1);
   });
 
   it("утренняя поездка следующего дня ограничивает ночную", () => {
     const withTomorrow = [...ranges, { from: 1440 + at(7), to: 1440 + at(7, 30) }];
     expect(latestEndMinute(at(23, 40), withTomorrow)).toBe(1440 + at(7));
   });
-
-  it("если начало занято, окончаний нет", () => {
-    expect(freeEndMinutes(at(12, 10), ranges)).toEqual([]);
-  });
-
-  it("окончание сбрасывается, если после смены начала оно стало недопустимым", () => {
-    expect(isEndStillAllowed(at(11), at(11, 50), ranges)).toBe(true);
-    expect(isEndStillAllowed(at(11), at(12, 30), ranges)).toBe(false);
-    expect(isEndStillAllowed(at(11), at(10, 50), ranges)).toBe(false);
-  });
 });
 
 describe("подписи", () => {
-  it("группы по часам: только часы, где есть свободные минуты", () => {
-    expect(groupByHour([at(9, 58), at(9, 59), at(11, 0), 1440 + 5])).toEqual([
-      { hour: 9, minutes: [at(9, 58), at(9, 59)] },
-      { hour: 11, minutes: [at(11, 0)] },
-      { hour: 24, minutes: [1440 + 5] },
-    ]);
-  });
-
-  it("время и день для минут следующего дня", () => {
+  it("время дня, следующего дня и ночной поездки вчерашнего дня", () => {
     expect(formatClockTime(at(8, 5))).toBe("08:05");
     expect(formatClockTime(1440 + 15)).toBe("00:15");
+    expect(formatClockTime(-20)).toBe("23:40");
     expect(dayOffsetOf(at(23, 59))).toBe(0);
     expect(dayOffsetOf(1440 + 15)).toBe(1);
+  });
+
+  it("промежуток поездки", () => {
+    expect(describeRange({ from: -30, to: 20 })).toBe("23:30–00:20");
+    expect(describeRange({ from: at(12), to: at(12, 25) })).toBe("12:00–12:25");
   });
 });

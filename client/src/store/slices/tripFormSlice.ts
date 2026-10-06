@@ -1,8 +1,9 @@
 import { randomUUID } from "expo-crypto";
 import type { StateCreator } from "zustand";
-import { busyRangesOfDay, isEndStillAllowed } from "../../domain/freeTime";
+import { busyRangesOfDay } from "../../domain/freeTime";
 import {
   buildTripFromDraft,
+  checkDraftTimes,
   createDraft,
   draftFromTrip,
   mapServerFieldErrors,
@@ -39,8 +40,9 @@ export interface TripFormSlice {
 const DEFAULT_TZ_OFFSET = "+05:00";
 
 const ERROR_FIELD_BY_DRAFT_KEY: Record<keyof EditableDraftFields, DraftField> = {
-  startMinute: "start",
-  endMinute: "end",
+  startTime: "start",
+  endTime: "end",
+  endsNextDay: "end",
   amount: "amount",
   commission: "commission",
   payment: "payment",
@@ -84,13 +86,11 @@ function editedTripId(mode: TripFormMode): string | undefined {
   return mode.kind === "edit" ? mode.tripId : undefined;
 }
 
-/** Новое начало может «съесть» выбранное окончание — тогда его надо выбрать заново. */
-function keepEndIfStillAllowed(draft: TripDraft, report: DayReport | null, mode: TripFormMode): TripDraft {
-  if (draft.startMinute === null || draft.endMinute === null || !report) return draft;
+/** Занято ли время, проверяем ещё до запроса: незачем ждать отказ сервера. */
+function timeErrorsOf(draft: TripDraft, report: DayReport | null, mode: TripFormMode): DraftErrors {
+  if (!report) return {};
   const ranges = busyRangesOfDay(report.date, report.tzOffset, report.busy, editedTripId(mode));
-  return isEndStillAllowed(draft.startMinute, draft.endMinute, ranges)
-    ? draft
-    : { ...draft, endMinute: null };
+  return checkDraftTimes(draft, ranges).errors;
 }
 
 function saveTrip(mode: TripFormMode, trip: Trip): Promise<{ date: string }> {
@@ -131,9 +131,8 @@ export const createTripFormSlice: StateCreator<AppState, [], [], TripFormSlice> 
   updateDraft(patch) {
     const draft = get().draft;
     if (!draft) return;
-    const updated = { ...draft, ...patch };
     set({
-      draft: "startMinute" in patch ? keepEndIfStillAllowed(updated, get().dayReport, get().formMode) : updated,
+      draft: { ...draft, ...patch },
       draftErrors: withoutErrorsFor(get().draftErrors, patch),
       submitMessage: null,
     });
@@ -145,8 +144,9 @@ export const createTripFormSlice: StateCreator<AppState, [], [], TripFormSlice> 
 
     const tzOffset = get().dayReport?.tzOffset ?? DEFAULT_TZ_OFFSET;
     const built = buildTripFromDraft(draft, tzOffset);
-    if (!built.ok) {
-      set({ draftErrors: built.errors, submitMessage: null });
+    const timeErrors = timeErrorsOf(draft, get().dayReport, formMode);
+    if (!built.ok || Object.keys(timeErrors).length > 0) {
+      set({ draftErrors: { ...(built.ok ? {} : built.errors), ...timeErrors }, submitMessage: null });
       return;
     }
 
