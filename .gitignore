@@ -17,3 +17,6 @@ client/expo-env.d.ts
 
 .DS_Store
 Thumbs.db
+
+# Локальные настройки инструментов
+.claude/
