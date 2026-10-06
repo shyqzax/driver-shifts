@@ -40,9 +40,22 @@ export function toMinuteRanges(busy: readonly BusyTime[], dayStartMs: number): M
     .sort((left, right) => left.from - right.from);
 }
 
-/** Занятое время дня `date` в минутах от его полуночи по часам бизнеса. */
-export function busyRangesOfDay(date: string, tzOffset: string, busy: readonly BusyTime[]): MinuteRange[] {
-  return toMinuteRanges(busy, Date.parse(`${date}T00:00:00${tzOffset}`));
+export function dayStartMsOf(date: string, tzOffset: string): number {
+  return Date.parse(`${date}T00:00:00${tzOffset}`);
+}
+
+/**
+ * Занятое время дня `date` в минутах от его полуночи по часам бизнеса.
+ * При редактировании своё же время поездке не мешает — его исключаем.
+ */
+export function busyRangesOfDay(
+  date: string,
+  tzOffset: string,
+  busy: readonly (BusyTime & { tripId: string })[],
+  excludeTripId?: string
+): MinuteRange[] {
+  const others = excludeTripId ? busy.filter((interval) => interval.tripId !== excludeTripId) : busy;
+  return toMinuteRanges(others, dayStartMsOf(date, tzOffset));
 }
 
 function isMinuteBusy(minute: number, ranges: readonly MinuteRange[]): boolean {

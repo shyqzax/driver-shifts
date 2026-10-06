@@ -6,6 +6,8 @@ import type {
   DayOverview,
   DayReport,
   Trip,
+  TripChanges,
+  UpdateTripResponse,
 } from "../types/api";
 
 const API_PORT = 3000;
@@ -98,5 +100,17 @@ export const tripsApi = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(trip),
     });
+  },
+
+  updateTrip(id: string, changes: TripChanges): Promise<UpdateTripResponse> {
+    return request<UpdateTripResponse>(`/v1/trips/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(changes),
+    });
+  },
+
+  async deleteTrip(id: string): Promise<void> {
+    await request<null>(`/v1/trips/${encodeURIComponent(id)}`, { method: "DELETE" });
   },
 };

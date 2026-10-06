@@ -13,6 +13,9 @@ export interface Trip {
 
 export type TripField = keyof Trip;
 
+/** Изменение поездки: всё, кроме номера — он в адресе запроса */
+export type TripChanges = Omit<Trip, "id">;
+
 export interface PaymentBreakdown {
   count: number;
   amount: number;
@@ -50,6 +53,11 @@ export interface AddTripResponse {
   trip: Trip;
   date: string;
   created: boolean;
+}
+
+export interface UpdateTripResponse {
+  trip: Trip;
+  date: string;
 }
 
 export interface ApiErrorBody {

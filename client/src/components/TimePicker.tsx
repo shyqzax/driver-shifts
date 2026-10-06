@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { dayOffsetOf, formatClockTime, groupByHour, type HourGroup } from "../domain/freeTime";
 import { colors, fontSize, radius, spacing } from "../theme";
 
@@ -13,66 +13,118 @@ interface TimePickerProps {
   hint?: string;
   error?: string;
   disabled?: boolean;
-  /** Час, который раскрыть сразу, пока время не выбрано */
+  /** Час, который показать первым, пока время не выбрано */
   suggestedHour?: number;
   onToggle: () => void;
   onChange: (minuteValue: number) => void;
 }
 
-interface ChipProps {
-  value: number;
+interface ColumnItem {
+  key: number;
   label: string;
-  isSelected: boolean;
-  onSelect: (value: number) => void;
+  caption?: string;
 }
 
-const Chip = memo(function Chip({ value, label, isSelected, onSelect }: ChipProps) {
-  const handlePress = useCallback(() => onSelect(value), [value, onSelect]);
+/** Высота строки и число видимых строк: колонка занимает 200 пикселей, а не весь экран. */
+const ROW_HEIGHT = 40;
+const VISIBLE_ROWS = 5;
+
+interface ColumnRowProps {
+  item: ColumnItem;
+  isSelected: boolean;
+  onSelect: (key: number) => void;
+}
+
+const ColumnRow = memo(function ColumnRow({ item, isSelected, onSelect }: ColumnRowProps) {
+  const handlePress = useCallback(() => onSelect(item.key), [item.key, onSelect]);
   return (
     <Pressable
       onPress={handlePress}
-      style={[styles.chip, isSelected && styles.chipSelected]}
+      style={[styles.row, isSelected && styles.rowSelected]}
       accessibilityRole="button"
       accessibilityState={{ selected: isSelected }}
     >
-      <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>{label}</Text>
+      <Text style={[styles.rowText, isSelected && styles.rowTextSelected]}>{item.label}</Text>
+      {item.caption ? (
+        <Text style={[styles.rowCaption, isSelected && styles.rowTextSelected]}>{item.caption}</Text>
+      ) : null}
     </Pressable>
   );
 });
+
+interface ScrollColumnProps {
+  title: string;
+  items: readonly ColumnItem[];
+  selectedKey: number | null;
+  emptyText: string;
+  onSelect: (key: number) => void;
+}
+
+/**
+ * Колонка сама прокручивается так, чтобы выбранная строка оказалась посередине.
+ * Первый раз — когда строки уже разложены (onContentSizeChange): раньше
+ * прокрутка уходит в пустоту. Дальше — при каждой смене выбора.
+ */
+function ScrollColumn({ title, items, selectedKey, emptyText, onSelect }: ScrollColumnProps) {
+  const scrollRef = useRef<ScrollView>(null);
+  const hasScrolled = useRef(false);
+  const selectedIndex = items.findIndex((item) => item.key === selectedKey);
+  const targetY = selectedIndex >= 0 ? Math.max(0, (selectedIndex - Math.floor(VISIBLE_ROWS / 2)) * ROW_HEIGHT) : 0;
+
+  const scrollToSelection = useCallback(
+    (animated: boolean) => scrollRef.current?.scrollTo({ y: targetY, animated }),
+    [targetY]
+  );
+
+  useEffect(() => {
+    // При открытии — сразу на место, без анимации; дальше при смене выбора — плавно
+    const animated = hasScrolled.current;
+    hasScrolled.current = true;
+    const timer = setTimeout(() => scrollToSelection(animated), 0);
+    return () => clearTimeout(timer);
+  }, [scrollToSelection, items]);
+
+  const handleContentSizeChange = useCallback(() => scrollToSelection(false), [scrollToSelection]);
+
+  return (
+    <View style={styles.column}>
+      <Text style={styles.columnTitle}>{title}</Text>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.columnScroll}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator
+        onContentSizeChange={handleContentSizeChange}
+      >
+        {items.length === 0 ? <Text style={styles.emptyText}>{emptyText}</Text> : null}
+        {items.map((item) => (
+          <ColumnRow key={item.key} item={item} isSelected={item.key === selectedKey} onSelect={onSelect} />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
 
 function describeValue(value: number): string {
   return dayOffsetOf(value) > 0 ? `${formatClockTime(value)} (+1 д)` : formatClockTime(value);
 }
 
-function hourLabel(hour: number): string {
-  return String(hour % 24).padStart(2, "0");
+/** Если подсказанный час целиком занят — ближайший свободный после него. */
+function nearestGroup(groups: readonly HourGroup[], hour: number | null): HourGroup | undefined {
+  if (hour === null) return undefined;
+  return groups.find((group) => group.hour >= hour) ?? groups[groups.length - 1];
 }
 
-interface HourRowProps {
-  title?: string;
-  groups: readonly HourGroup[];
-  activeHour: number | null;
-  onSelectHour: (hour: number) => void;
+function toHourItem(group: HourGroup): ColumnItem {
+  return {
+    key: group.hour,
+    label: String(group.hour % 24).padStart(2, "0"),
+    caption: group.hour >= 24 ? "+1 д" : undefined,
+  };
 }
 
-function HourRow({ title, groups, activeHour, onSelectHour }: HourRowProps) {
-  if (groups.length === 0) return null;
-  return (
-    <View style={styles.section}>
-      {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
-      <View style={styles.grid}>
-        {groups.map((group) => (
-          <Chip
-            key={group.hour}
-            value={group.hour}
-            label={hourLabel(group.hour)}
-            isSelected={group.hour === activeHour}
-            onSelect={onSelectHour}
-          />
-        ))}
-      </View>
-    </View>
-  );
+function toMinuteItem(minuteValue: number): ColumnItem {
+  return { key: minuteValue, label: formatClockTime(minuteValue).slice(3) };
 }
 
 export function TimePicker({
@@ -95,10 +147,11 @@ export function TimePicker({
     if (!isOpen) setPickedHour(null);
   }, [isOpen]);
 
-  const activeHour = pickedHour ?? (value !== null ? Math.floor(value / 60) : (suggestedHour ?? null));
-  const activeGroup = groups.find((group) => group.hour === activeHour);
-  const sameDayGroups = groups.filter((group) => group.hour < 24);
-  const nextDayGroups = groups.filter((group) => group.hour >= 24);
+  const preferredHour = pickedHour ?? (value !== null ? Math.floor(value / 60) : (suggestedHour ?? null));
+  const activeGroup = nearestGroup(groups, preferredHour);
+  const hourItems = useMemo(() => groups.map(toHourItem), [groups]);
+  const minuteItems = useMemo(() => (activeGroup ? activeGroup.minutes.map(toMinuteItem) : []), [activeGroup]);
+  const selectedMinute = value !== null && activeGroup?.minutes.includes(value) ? value : null;
 
   return (
     <View style={styles.container}>
@@ -121,37 +174,20 @@ export function TimePicker({
 
       {isOpen ? (
         <View style={styles.panel}>
-          {groups.length === 0 ? <Text style={styles.hint}>Свободного времени нет</Text> : null}
-          <HourRow
-            title={nextDayGroups.length > 0 ? "Час" : undefined}
-            groups={sameDayGroups}
-            activeHour={activeHour}
-            onSelectHour={setPickedHour}
+          <ScrollColumn
+            title="Час"
+            items={hourItems}
+            selectedKey={activeGroup?.hour ?? null}
+            emptyText="Свободного времени нет"
+            onSelect={setPickedHour}
           />
-          <HourRow
-            title="Час после полуночи"
-            groups={nextDayGroups}
-            activeHour={activeHour}
-            onSelectHour={setPickedHour}
+          <ScrollColumn
+            title="Минуты"
+            items={minuteItems}
+            selectedKey={selectedMinute}
+            emptyText="Выберите час"
+            onSelect={onChange}
           />
-          {activeGroup ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Минуты, {hourLabel(activeGroup.hour)} ч</Text>
-              <View style={styles.grid}>
-                {activeGroup.minutes.map((minuteValue) => (
-                  <Chip
-                    key={minuteValue}
-                    value={minuteValue}
-                    label={formatClockTime(minuteValue).slice(3)}
-                    isSelected={minuteValue === value}
-                    onSelect={onChange}
-                  />
-                ))}
-              </View>
-            </View>
-          ) : groups.length > 0 ? (
-            <Text style={styles.hint}>Выберите час</Text>
-          ) : null}
         </View>
       ) : null}
     </View>
@@ -205,40 +241,55 @@ const styles = StyleSheet.create({
     color: colors.danger,
   },
   panel: {
+    flexDirection: "row",
+    gap: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.md,
-    gap: spacing.md,
   },
-  section: {
-    gap: spacing.sm,
+  column: {
+    flex: 1,
+    gap: spacing.xs,
   },
-  sectionTitle: {
+  columnTitle: {
     fontSize: fontSize.caption,
     fontWeight: "600",
     color: colors.textMuted,
+    textAlign: "center",
   },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  chip: {
-    minWidth: 44,
-    alignItems: "center",
-    paddingVertical: spacing.sm,
+  columnScroll: {
+    height: ROW_HEIGHT * VISIBLE_ROWS,
     borderRadius: radius.sm,
     backgroundColor: colors.background,
   },
-  chipSelected: {
+  row: {
+    height: ROW_HEIGHT,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    borderRadius: radius.sm,
+  },
+  rowSelected: {
     backgroundColor: colors.accent,
   },
-  chipText: {
-    fontSize: fontSize.body,
+  rowText: {
+    fontSize: fontSize.title,
     color: colors.text,
   },
-  chipTextSelected: {
+  rowCaption: {
+    fontSize: fontSize.caption,
+    color: colors.textMuted,
+  },
+  rowTextSelected: {
     color: colors.onAccent,
     fontWeight: "600",
+  },
+  emptyText: {
+    fontSize: fontSize.caption,
+    color: colors.textMuted,
+    textAlign: "center",
+    paddingTop: spacing.lg,
+    paddingHorizontal: spacing.sm,
   },
 });

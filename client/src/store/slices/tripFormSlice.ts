@@ -4,31 +4,55 @@ import { busyRangesOfDay, isEndStillAllowed } from "../../domain/freeTime";
 import {
   buildTripFromDraft,
   createDraft,
+  draftFromTrip,
   mapServerFieldErrors,
+  tripChangesOf,
   type DraftErrors,
   type DraftField,
   type TripDraft,
 } from "../../domain/tripDraft";
-import type { DayReport } from "../../types/api";
 import { tripsApi, TripsApiError } from "../../services/tripsApi";
+import type { DayReport, Trip } from "../../types/api";
 import { formatMoney, formatTimeInZone } from "../../utils/format";
 import type { AppState } from "../useAppStore";
 
 export type EditableDraftFields = Omit<TripDraft, "id" | "date">;
 
-export interface AddTripSlice {
-  isAddTripOpen: boolean;
+export type TripFormMode = { kind: "create" } | { kind: "edit"; tripId: string };
+
+export interface TripFormSlice {
+  isTripFormOpen: boolean;
+  formMode: TripFormMode;
   draft: TripDraft | null;
+  /** Каким черновик был при открытии — чтобы спросить перед закрытием, если что-то изменили */
+  initialDraft: TripDraft | null;
   draftErrors: DraftErrors;
   isSubmitting: boolean;
   submitMessage: string | null;
   openAddTrip: () => void;
-  closeAddTrip: () => void;
+  openEditTrip: (trip: Trip) => void;
+  closeTripForm: () => void;
   updateDraft: (patch: Partial<EditableDraftFields>) => void;
   submitDraft: () => Promise<void>;
 }
 
 const DEFAULT_TZ_OFFSET = "+05:00";
+
+const ERROR_FIELD_BY_DRAFT_KEY: Record<keyof EditableDraftFields, DraftField> = {
+  startMinute: "start",
+  endMinute: "end",
+  amount: "amount",
+  commission: "commission",
+  payment: "payment",
+};
+
+const CLOSED_FORM = {
+  isTripFormOpen: false,
+  draft: null,
+  initialDraft: null,
+  draftErrors: {},
+  submitMessage: null,
+} as const;
 
 function describeSubmitError(error: unknown, tzOffset: string): string {
   if (!(error instanceof TripsApiError)) return "Не удалось сохранить поездку";
@@ -48,14 +72,6 @@ function describeSubmitError(error: unknown, tzOffset: string): string {
   return error.message;
 }
 
-const ERROR_FIELD_BY_DRAFT_KEY: Record<keyof EditableDraftFields, DraftField> = {
-  startMinute: "start",
-  endMinute: "end",
-  amount: "amount",
-  commission: "commission",
-  payment: "payment",
-};
-
 function withoutErrorsFor(errors: DraftErrors, patch: Partial<EditableDraftFields>): DraftErrors {
   const remaining: DraftErrors = { ...errors };
   for (const key of Object.keys(patch) as (keyof EditableDraftFields)[]) {
@@ -64,36 +80,52 @@ function withoutErrorsFor(errors: DraftErrors, patch: Partial<EditableDraftField
   return remaining;
 }
 
+function editedTripId(mode: TripFormMode): string | undefined {
+  return mode.kind === "edit" ? mode.tripId : undefined;
+}
+
 /** Новое начало может «съесть» выбранное окончание — тогда его надо выбрать заново. */
-function keepEndIfStillAllowed(draft: TripDraft, report: DayReport | null): TripDraft {
+function keepEndIfStillAllowed(draft: TripDraft, report: DayReport | null, mode: TripFormMode): TripDraft {
   if (draft.startMinute === null || draft.endMinute === null || !report) return draft;
-  const ranges = busyRangesOfDay(report.date, report.tzOffset, report.busy);
+  const ranges = busyRangesOfDay(report.date, report.tzOffset, report.busy, editedTripId(mode));
   return isEndStillAllowed(draft.startMinute, draft.endMinute, ranges)
     ? draft
     : { ...draft, endMinute: null };
 }
 
-export const createAddTripSlice: StateCreator<AppState, [], [], AddTripSlice> = (set, get) => ({
-  isAddTripOpen: false,
-  draft: null,
-  draftErrors: {},
+function saveTrip(mode: TripFormMode, trip: Trip): Promise<{ date: string }> {
+  return mode.kind === "create"
+    ? tripsApi.addTrip(trip)
+    : tripsApi.updateTrip(mode.tripId, tripChangesOf(trip));
+}
+
+export const createTripFormSlice: StateCreator<AppState, [], [], TripFormSlice> = (set, get) => ({
+  ...CLOSED_FORM,
+  formMode: { kind: "create" },
   isSubmitting: false,
-  submitMessage: null,
 
   openAddTrip() {
     const date = get().selectedDate;
     if (!date) return;
+    const draft = createDraft(randomUUID(), date);
+    set({ ...CLOSED_FORM, isTripFormOpen: true, formMode: { kind: "create" }, draft, initialDraft: draft });
+  },
+
+  openEditTrip(trip) {
+    const tzOffset = get().dayReport?.tzOffset ?? DEFAULT_TZ_OFFSET;
+    const draft = draftFromTrip(trip, tzOffset);
     set({
-      isAddTripOpen: true,
-      draft: createDraft(randomUUID(), date),
-      draftErrors: {},
-      submitMessage: null,
+      ...CLOSED_FORM,
+      isTripFormOpen: true,
+      formMode: { kind: "edit", tripId: trip.id },
+      draft,
+      initialDraft: draft,
     });
   },
 
-  closeAddTrip() {
+  closeTripForm() {
     if (get().isSubmitting) return;
-    set({ isAddTripOpen: false, draft: null, draftErrors: {}, submitMessage: null });
+    set(CLOSED_FORM);
   },
 
   updateDraft(patch) {
@@ -101,14 +133,14 @@ export const createAddTripSlice: StateCreator<AppState, [], [], AddTripSlice> = 
     if (!draft) return;
     const updated = { ...draft, ...patch };
     set({
-      draft: "startMinute" in patch ? keepEndIfStillAllowed(updated, get().dayReport) : updated,
+      draft: "startMinute" in patch ? keepEndIfStillAllowed(updated, get().dayReport, get().formMode) : updated,
       draftErrors: withoutErrorsFor(get().draftErrors, patch),
       submitMessage: null,
     });
   },
 
   async submitDraft() {
-    const { draft, isSubmitting } = get();
+    const { draft, isSubmitting, formMode } = get();
     if (!draft || isSubmitting) return;
 
     const tzOffset = get().dayReport?.tzOffset ?? DEFAULT_TZ_OFFSET;
@@ -120,8 +152,8 @@ export const createAddTripSlice: StateCreator<AppState, [], [], AddTripSlice> = 
 
     set({ isSubmitting: true, submitMessage: null });
     try {
-      const { date } = await tripsApi.addTrip(built.trip);
-      set({ isSubmitting: false, isAddTripOpen: false, draft: null, draftErrors: {} });
+      const { date } = await saveTrip(formMode, built.trip);
+      set({ ...CLOSED_FORM, isSubmitting: false });
       await Promise.all([get().refreshDays(), get().selectDate(date)]);
     } catch (error) {
       const fields = error instanceof TripsApiError ? error.body?.fields : undefined;

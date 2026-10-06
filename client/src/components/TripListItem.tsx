@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { memo, useCallback } from "react";
+import { Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from "react-native";
 import { colors, fontSize, radius, spacing } from "../theme";
 import type { Trip } from "../types/api";
 import { dayKeyInZone, formatDuration, formatMoney, formatTimeInZone } from "../utils/format";
@@ -7,18 +7,29 @@ import { dayKeyInZone, formatDuration, formatMoney, formatTimeInZone } from "../
 interface TripListItemProps {
   trip: Trip;
   tzOffset: string;
+  onOpen: (tripId: string) => void;
 }
 
 const PAYMENT_LABELS = { cash: "Наличные", card: "Карта" } as const;
 
-export const TripListItem = memo(function TripListItem({ trip, tzOffset }: TripListItemProps) {
+function rowStyle({ pressed }: PressableStateCallbackType) {
+  return [styles.row, pressed && styles.rowPressed];
+}
+
+export const TripListItem = memo(function TripListItem({ trip, tzOffset, onOpen }: TripListItemProps) {
+  const handlePress = useCallback(() => onOpen(trip.id), [onOpen, trip.id]);
   const start = formatTimeInZone(trip.start, tzOffset);
   const end = formatTimeInZone(trip.end, tzOffset);
   const endsNextDay = dayKeyInZone(trip.end, tzOffset) !== dayKeyInZone(trip.start, tzOffset);
   const isCash = trip.payment === "cash";
 
   return (
-    <View style={styles.row}>
+    <Pressable
+      onPress={handlePress}
+      style={rowStyle}
+      accessibilityRole="button"
+      accessibilityHint="Открыть поездку"
+    >
       <View style={styles.timeColumn}>
         <Text style={styles.time}>
           {start} – {end}
@@ -36,7 +47,7 @@ export const TripListItem = memo(function TripListItem({ trip, tzOffset }: TripL
           </Text>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 });
 
@@ -50,6 +61,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     gap: spacing.md,
+  },
+  rowPressed: {
+    opacity: 0.6,
   },
   timeColumn: {
     flex: 1,

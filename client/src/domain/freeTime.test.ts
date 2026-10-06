@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  busyRangesOfDay,
   dayOffsetOf,
   formatClockTime,
   freeEndMinutes,
@@ -45,6 +46,18 @@ describe("занятое время в минутах дня", () => {
       DAY_START_MS
     );
     expect(ranges).toEqual([{ from: at(12), to: at(12, 11) }]);
+  });
+});
+
+describe("занятое время при редактировании", () => {
+  const busy = [
+    { tripId: "a", start: "2026-10-01T09:00:00+05:00", end: "2026-10-01T09:30:00+05:00" },
+    { tripId: "b", start: "2026-10-01T12:00:00+05:00", end: "2026-10-01T12:25:00+05:00" },
+  ];
+
+  it("своё время поездке не мешает, чужое — мешает", () => {
+    expect(busyRangesOfDay("2026-10-01", "+05:00", busy, "b")).toEqual([{ from: at(9), to: at(9, 30) }]);
+    expect(busyRangesOfDay("2026-10-01", "+05:00", busy)).toHaveLength(2);
   });
 });
 

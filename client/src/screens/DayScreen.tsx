@@ -75,6 +75,7 @@ export function DayScreen() {
   const shiftSelectedDate = useAppStore((state) => state.shiftSelectedDate);
   const reloadDay = useAppStore((state) => state.reloadDay);
   const openAddTrip = useAppStore((state) => state.openAddTrip);
+  const openTripDetails = useAppStore((state) => state.openTripDetails);
 
   useEffect(() => {
     void loadInitialDay();
@@ -82,8 +83,10 @@ export function DayScreen() {
 
   const tzOffset = dayReport?.tzOffset ?? "+05:00";
   const renderTrip = useCallback(
-    ({ item }: ListRenderItemInfo<Trip>) => <TripListItem trip={item} tzOffset={tzOffset} />,
-    [tzOffset]
+    ({ item }: ListRenderItemInfo<Trip>) => (
+      <TripListItem trip={item} tzOffset={tzOffset} onOpen={openTripDetails} />
+    ),
+    [tzOffset, openTripDetails]
   );
   const handleShiftDay = useCallback((delta: number) => void shiftSelectedDate(delta), [shiftSelectedDate]);
   const handleSelectDay = useCallback((date: string) => void selectDate(date), [selectDate]);

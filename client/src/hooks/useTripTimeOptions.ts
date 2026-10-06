@@ -29,10 +29,14 @@ function suggestStartHour(ranges: readonly MinuteRange[]): number | undefined {
 export function useTripTimeOptions(): TripTimeOptions {
   const report = useAppStore((state) => state.dayReport);
   const startMinute = useAppStore((state) => state.draft?.startMinute ?? null);
+  // При редактировании своё же время поездке не мешает
+  const editedTripId = useAppStore((state) =>
+    state.formMode.kind === "edit" ? state.formMode.tripId : undefined
+  );
 
   const ranges = useMemo(
-    () => (report ? busyRangesOfDay(report.date, report.tzOffset, report.busy) : []),
-    [report]
+    () => (report ? busyRangesOfDay(report.date, report.tzOffset, report.busy, editedTripId) : []),
+    [report, editedTripId]
   );
   const startOptions = useMemo(() => freeStartMinutes(ranges), [ranges]);
   const endOptions = useMemo(

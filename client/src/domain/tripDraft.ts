@@ -1,6 +1,6 @@
-import type { PaymentMethod, Trip } from "../types/api";
-import { addDays } from "../utils/format";
-import { dayOffsetOf, formatClockTime } from "./freeTime";
+import type { PaymentMethod, Trip, TripChanges } from "../types/api";
+import { addDays, dayKeyInZone } from "../utils/format";
+import { dayOffsetOf, dayStartMsOf, formatClockTime } from "./freeTime";
 
 /** Форма добавления. Время — минуты от полуночи выбранного дня (см. freeTime). */
 export interface TripDraft {
@@ -33,6 +33,44 @@ export function createDraft(id: string, date: string): TripDraft {
     commission: "",
     payment: "card",
   };
+}
+
+const MS_PER_MINUTE = 60_000;
+
+/** Форма редактирования: время поездки — в минутах от полуночи её дня. */
+export function draftFromTrip(trip: Trip, tzOffset: string): TripDraft {
+  const date = dayKeyInZone(trip.start, tzOffset);
+  const dayStartMs = dayStartMsOf(date, tzOffset);
+  return {
+    id: trip.id,
+    date,
+    startMinute: Math.round((Date.parse(trip.start) - dayStartMs) / MS_PER_MINUTE),
+    endMinute: Math.round((Date.parse(trip.end) - dayStartMs) / MS_PER_MINUTE),
+    amount: String(trip.amount),
+    commission: String(trip.commission),
+    payment: trip.payment,
+  };
+}
+
+/** Есть ли что терять при закрытии формы. */
+export function isDraftDirty(draft: TripDraft, initial: TripDraft): boolean {
+  return (
+    draft.startMinute !== initial.startMinute ||
+    draft.endMinute !== initial.endMinute ||
+    draft.amount.trim() !== initial.amount.trim() ||
+    draft.commission.trim() !== initial.commission.trim() ||
+    draft.payment !== initial.payment
+  );
+}
+
+/** «На руки» с одной поездки — в тиынах, чтобы не было хвостов дробей. */
+export function netOfTrip(trip: Pick<Trip, "amount" | "commission">): number {
+  return (Math.round(trip.amount * 100) - Math.round(trip.commission * 100)) / 100;
+}
+
+export function tripChangesOf(trip: Trip): TripChanges {
+  const { id: _id, ...changes } = trip;
+  return changes;
 }
 
 /** `1 500,50` → 1500.5. Копейки и знак проверяет сервер — правила живут в одном месте. */

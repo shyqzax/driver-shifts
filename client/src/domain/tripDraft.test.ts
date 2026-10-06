@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildTripFromDraft,
   createDraft,
+  draftFromTrip,
+  isDraftDirty,
   mapServerFieldErrors,
+  netOfTrip,
   minuteToIso,
   parseMoneyInput,
   suggestCommission,
@@ -48,12 +51,64 @@ describe("сборка поездки из формы", () => {
   });
 });
 
+describe("редактирование", () => {
+  const nightTrip = {
+    id: "t15",
+    start: "2026-10-02T23:40:00+05:00",
+    end: "2026-10-03T00:15:00+05:00",
+    amount: 2800,
+    payment: "cash" as const,
+    commission: 420,
+  };
+
+  it("форма из ночной поездки: день начала, окончание после полуночи", () => {
+    expect(draftFromTrip(nightTrip, TZ)).toEqual({
+      id: "t15",
+      date: "2026-10-02",
+      startMinute: 23 * 60 + 40,
+      endMinute: 1440 + 15,
+      amount: "2800",
+      commission: "420",
+      payment: "cash",
+    });
+  });
+
+  it("форма из поездки и обратно даёт ту же поездку", () => {
+    const result = buildTripFromDraft(draftFromTrip(nightTrip, TZ), TZ);
+    expect(result).toEqual({ ok: true, trip: nightTrip });
+  });
+
+  it("время, записанное в UTC, раскладывается по часам бизнеса", () => {
+    const draft = draftFromTrip({ ...nightTrip, start: "2026-10-02T18:40:00Z", end: "2026-10-02T19:15:00Z" }, TZ);
+    expect([draft.date, draft.startMinute, draft.endMinute]).toEqual(["2026-10-02", 23 * 60 + 40, 1440 + 15]);
+  });
+
+  it("несохранённые изменения: пробелы по краям — не изменение", () => {
+    const initial = draftFromTrip(nightTrip, TZ);
+    expect(isDraftDirty({ ...initial, amount: " 2800 " }, initial)).toBe(false);
+    expect(isDraftDirty({ ...initial, amount: "2900" }, initial)).toBe(true);
+    expect(isDraftDirty({ ...initial, endMinute: 1440 + 20 }, initial)).toBe(true);
+    expect(isDraftDirty({ ...initial, payment: "card" }, initial)).toBe(true);
+  });
+
+  it("пустая новая форма — закрыть можно без вопросов", () => {
+    const empty = createDraft("id", "2026-10-04");
+    expect(isDraftDirty(empty, empty)).toBe(false);
+    expect(isDraftDirty({ ...empty, startMinute: 600 }, empty)).toBe(true);
+  });
+});
+
 describe("ввод денег", () => {
   it("пробелы и запятая допустимы", () => {
     expect(parseMoneyInput("1 500,50")).toBe(1500.5);
     expect(parseMoneyInput("2400")).toBe(2400);
     expect(parseMoneyInput("-5")).toBeNull();
     expect(parseMoneyInput("")).toBeNull();
+  });
+
+  it("«на руки» с поездки без хвостов дробей", () => {
+    expect(netOfTrip({ amount: 2400, commission: 360 })).toBe(2040);
+    expect(netOfTrip({ amount: 0.3, commission: 0.1 })).toBe(0.2);
   });
 
   it("подсказка комиссии — 15% с копейками", () => {
