@@ -1,0 +1,29 @@
+[
+  {"id": "t1", "start": "2026-10-01T08:10:00+05:00", "end": "2026-10-01T08:32:00+05:00", "amount": 2400, "payment": "card", "commission": 360},
+  {"id": "t2", "start": "2026-10-01T09:05:00+05:00", "end": "2026-10-01T09:20:00+05:00", "amount": 1500, "payment": "cash", "commission": 225},
+  {"id": "t3", "start": "2026-10-01T09:48:00+05:00", "end": "2026-10-01T10:15:00+05:00", "amount": 2100, "payment": "card", "commission": 315},
+  {"id": "t4", "start": "2026-10-01T11:02:00+05:00", "end": "2026-10-01T11:40:00+05:00", "amount": 3200, "payment": "card", "commission": 480},
+  {"id": "t5", "start": "2026-10-01T12:30:00+05:00", "end": "2026-10-01T12:44:00+05:00", "amount": 1100, "payment": "cash", "commission": 165},
+  {"id": "t6", "start": "2026-10-01T14:10:00+05:00", "end": "2026-10-01T14:52:00+05:00", "amount": 3800, "payment": "card", "commission": 570},
+  {"id": "t7", "start": "2026-10-01T16:25:00+05:00", "end": "2026-10-01T16:47:00+05:00", "amount": 1700, "payment": "cash", "commission": 255},
+  {"id": "t8", "start": "2026-10-01T18:05:00+05:00", "end": "2026-10-01T18:41:00+05:00", "amount": 2900, "payment": "card", "commission": 435},
+
+  {"id": "t9", "start": "2026-10-02T07:40:00+05:00", "end": "2026-10-02T08:05:00+05:00", "amount": 1900, "payment": "cash", "commission": 285},
+  {"id": "t10", "start": "2026-10-02T08:30:00+05:00", "end": "2026-10-02T09:12:00+05:00", "amount": 3500, "payment": "card", "commission": 525},
+  {"id": "t11", "start": "2026-10-02T10:15:00+05:00", "end": "2026-10-02T10:33:00+05:00", "amount": 1300, "payment": "card", "commission": 195},
+  {"id": "t12", "start": "2026-10-02T13:20:00+05:00", "end": "2026-10-02T13:58:00+05:00", "amount": 2700, "payment": "cash", "commission": 405},
+  {"id": "t13", "start": "2026-10-02T17:45:00+05:00", "end": "2026-10-02T18:20:00+05:00", "amount": 2600, "payment": "card", "commission": 390},
+  {"id": "t14", "start": "2026-10-02T21:10:00+05:00", "end": "2026-10-02T21:35:00+05:00", "amount": 2000, "payment": "card", "commission": 300},
+  {"id": "t15", "start": "2026-10-02T23:40:00+05:00", "end": "2026-10-03T00:15:00+05:00", "amount": 2800, "payment": "cash", "commission": 420},
+
+  {"id": "t16", "start": "2026-10-03T10:20:00+05:00", "end": "2026-10-03T10:50:00+05:00", "amount": 2300, "payment": "card", "commission": 345},
+  {"id": "t17", "start": "2026-10-03T11:30:00+05:00", "end": "2026-10-03T11:52:00+05:00", "amount": 1600, "payment": "cash", "commission": 240},
+  {"id": "t18", "start": "2026-10-03T15:05:00+05:00", "end": "2026-10-03T15:41:00+05:00", "amount": 3100, "payment": "card", "commission": 465},
+  {"id": "t19", "start": "2026-10-03T19:00:00+05:00", "end": "2026-10-03T19:28:00+05:00", "amount": 2200, "payment": "card", "commission": 330},
+
+  {"id": "t20", "start": "2026-10-05T08:00:00+05:00", "end": "2026-10-05T08:25:00+05:00", "amount": 2000, "payment": "card", "commission": 300},
+  {"id": "t21", "start": "2026-10-05T09:10:00+05:00", "end": "2026-10-05T09:45:00+05:00", "amount": 2900, "payment": "cash", "commission": 435},
+  {"id": "t22", "start": "2026-10-05T12:40:00+05:00", "end": "2026-10-05T13:05:00+05:00", "amount": 2100, "payment": "card", "commission": 210},
+  {"id": "t23", "start": "2026-10-05T16:30:00+05:00", "end": "2026-10-05T17:10:00+05:00", "amount": 3400, "payment": "card", "commission": 510},
+  {"id": "t24", "start": "2026-10-05T18:20:00+05:00", "end": "2026-10-05T18:38:00+05:00", "amount": 1400, "payment": "cash", "commission": 210}
+]
