@@ -43,6 +43,16 @@ export type AddTripOutcome =
   | { kind: "id_conflict"; existingTrip: Trip }
   | { kind: "overlap"; conflictingTrip: Trip };
 
+export type TripChanges = Omit<Trip, "id">;
+
+export type UpdateTripOutcome =
+  | { kind: "updated"; trip: Trip; date: DayKey }
+  | { kind: "not_found" }
+  | { kind: "invalid"; fieldErrors: TripFieldErrors }
+  | { kind: "overlap"; conflictingTrip: Trip };
+
+export type DeleteTripOutcome = { kind: "deleted" } | { kind: "not_found" };
+
 /**
  * «Та же поездка» сравнивается по смыслу, а не по тексту: `08:10+05:00` и
  * `03:10Z` — один момент, `1500` и `1500.00` — одна сумма.
@@ -121,6 +131,30 @@ export class TripService {
     return { kind: "created", trip, date };
   }
 
+  /**
+   * Изменение повторять безопасно: те же данные дают тот же результат. Своё
+   * же старое время поездке не мешает — пересечение ищется среди остальных.
+   */
+  async updateTrip(id: string, changes: TripChanges): Promise<UpdateTripOutcome> {
+    const trip = pickTripFields({ ...changes, id });
+
+    const validation = validateTrip(trip);
+    if (!validation.ok) return { kind: "invalid", fieldErrors: validation.fieldErrors };
+    if (!this.repository.findById(id)) return { kind: "not_found" };
+
+    const conflictingTrip = this.findOverlappingTrip(trip);
+    if (conflictingTrip) return { kind: "overlap", conflictingTrip };
+
+    await this.repository.replace(trip);
+    return { kind: "updated", trip, date: tripDayKey(trip, this.tzOffsetMinutes) };
+  }
+
+  async deleteTrip(id: string): Promise<DeleteTripOutcome> {
+    if (!this.repository.findById(id)) return { kind: "not_found" };
+    await this.repository.remove(id);
+    return { kind: "deleted" };
+  }
+
   private listBusyIntervals(date: DayKey): BusyInterval[] {
     const windowStartMs = dayStartMs(date, this.tzOffsetMinutes);
     const windowEndMs = windowStartMs + BUSY_WINDOW_DAYS * MS_PER_DAY;
@@ -136,6 +170,7 @@ export class TripService {
   private findOverlappingTrip(candidate: Trip): Trip | undefined {
     const candidateInterval = tripInterval(candidate);
     return this.repository.all().find((existing) => {
+      if (existing.id === candidate.id) return false;
       const existingInterval = tripInterval(existing);
       return (
         existingInterval.startMs < candidateInterval.endMs &&

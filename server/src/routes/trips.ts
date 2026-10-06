@@ -3,7 +3,12 @@ import { isValidDayKey } from "../domain/businessDay";
 import type { Trip } from "../domain/trip";
 import { ApiError } from "../http/apiError";
 import { VALIDATION_FAILED_MESSAGE } from "../http/errorHandler";
-import type { AddTripOutcome, TripService } from "../services/tripService";
+import type {
+  AddTripOutcome,
+  TripChanges,
+  TripService,
+  UpdateTripOutcome,
+} from "../services/tripService";
 
 export interface TripRoutesOptions {
   tripService: TripService;
@@ -23,6 +28,28 @@ const tripBodySchema = {
     commission: { type: "number" },
   },
 } as const;
+
+/** Изменение: те же поля, но без id — он берётся из адреса и меняться не может. */
+const tripChangesSchema = {
+  type: "object",
+  required: ["start", "end", "amount", "payment", "commission"],
+  additionalProperties: false,
+  properties: {
+    start: { type: "string" },
+    end: { type: "string" },
+    amount: { type: "number" },
+    payment: { type: "string" },
+    commission: { type: "number" },
+  },
+} as const;
+
+const tripParamsSchema = {
+  type: "object",
+  required: ["id"],
+  properties: { id: { type: "string" } },
+} as const;
+
+const TRIP_NOT_FOUND = { code: "trip_not_found", message: "Поездка не найдена — возможно, её уже удалили" };
 
 const dayParamsSchema = {
   type: "object",
@@ -57,6 +84,27 @@ function sendAddTripOutcome(reply: FastifyReply, outcome: AddTripOutcome): Fasti
   }
 }
 
+function sendUpdateTripOutcome(reply: FastifyReply, outcome: UpdateTripOutcome): FastifyReply {
+  switch (outcome.kind) {
+    case "updated":
+      return reply.code(200).send({ trip: outcome.trip, date: outcome.date });
+    case "not_found":
+      return reply.code(404).send(TRIP_NOT_FOUND);
+    case "invalid":
+      return reply.code(400).send({
+        code: "validation_failed",
+        message: VALIDATION_FAILED_MESSAGE,
+        fields: outcome.fieldErrors,
+      });
+    case "overlap":
+      return reply.code(409).send({
+        code: "trip_overlap",
+        message: "Поездка пересекается по времени с уже записанной",
+        conflictingTrip: outcome.conflictingTrip,
+      });
+  }
+}
+
 export const tripRoutes: FastifyPluginAsync<TripRoutesOptions> = async (app, { tripService }) => {
   app.get("/v1/days", async () => tripService.listDays());
 
@@ -76,5 +124,22 @@ export const tripRoutes: FastifyPluginAsync<TripRoutesOptions> = async (app, { t
     "/v1/trips",
     { schema: { body: tripBodySchema } },
     async (request, reply) => sendAddTripOutcome(reply, await tripService.addTrip(request.body))
+  );
+
+  app.put<{ Params: { id: string }; Body: TripChanges }>(
+    "/v1/trips/:id",
+    { schema: { params: tripParamsSchema, body: tripChangesSchema } },
+    async (request, reply) =>
+      sendUpdateTripOutcome(reply, await tripService.updateTrip(request.params.id, request.body))
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    "/v1/trips/:id",
+    { schema: { params: tripParamsSchema } },
+    async (request, reply) => {
+      const outcome = await tripService.deleteTrip(request.params.id);
+      if (outcome.kind === "not_found") return reply.code(404).send(TRIP_NOT_FOUND);
+      return reply.code(204).send();
+    }
   );
 };

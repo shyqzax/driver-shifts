@@ -11,6 +11,9 @@ export interface TripRepository {
   all(): readonly Trip[];
   findById(id: string): Trip | undefined;
   insert(trip: Trip): Promise<void>;
+  /** Заменяет существующую поездку с тем же id — тот же порядок: память сразу, диск потом */
+  replace(trip: Trip): Promise<void>;
+  remove(id: string): Promise<void>;
 }
 
 export class InMemoryTripRepository implements TripRepository {
@@ -32,6 +35,16 @@ export class InMemoryTripRepository implements TripRepository {
 
   insert(trip: Trip): Promise<void> {
     this.tripsById.set(trip.id, trip);
+    return Promise.resolve();
+  }
+
+  replace(trip: Trip): Promise<void> {
+    this.tripsById.set(trip.id, trip);
+    return Promise.resolve();
+  }
+
+  remove(id: string): Promise<void> {
+    this.tripsById.delete(id);
     return Promise.resolve();
   }
 }

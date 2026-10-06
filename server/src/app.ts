@@ -28,7 +28,11 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   });
 
   const corsOrigins = options.corsOrigins ?? "*";
-  await app.register(cors, { origin: corsOrigins === "*" ? true : [...corsOrigins] });
+  await app.register(cors, {
+    origin: corsOrigins === "*" ? true : [...corsOrigins],
+    // По умолчанию плагин разрешает браузеру только GET/HEAD/POST — изменение и удаление не прошли бы
+    methods: ["GET", "HEAD", "POST", "PUT", "DELETE"],
+  });
 
   app.setErrorHandler(handleError);
   app.setNotFoundHandler((_request, reply) =>

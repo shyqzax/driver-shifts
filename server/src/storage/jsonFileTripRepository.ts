@@ -106,6 +106,24 @@ export class JsonFileTripRepository extends InMemoryTripRepository {
     });
   }
 
+  override replace(trip: Trip): Promise<void> {
+    const previous = this.tripsById.get(trip.id);
+    this.tripsById.set(trip.id, trip);
+    return this.persist().catch((error: unknown) => {
+      if (previous) this.tripsById.set(trip.id, previous);
+      throw error;
+    });
+  }
+
+  override remove(id: string): Promise<void> {
+    const previous = this.tripsById.get(id);
+    this.tripsById.delete(id);
+    return this.persist().catch((error: unknown) => {
+      if (previous) this.tripsById.set(id, previous);
+      throw error;
+    });
+  }
+
   /** Записи идут строго по очереди, иначе два rename могли бы обогнать друг друга. */
   private persist(): Promise<void> {
     const write = this.writeQueue.then(() => this.writeSnapshot());
