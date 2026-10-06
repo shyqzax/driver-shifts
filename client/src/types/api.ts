@@ -26,11 +26,19 @@ export interface DaySummary {
   byPayment: Record<PaymentMethod, PaymentBreakdown>;
 }
 
+export interface BusyInterval {
+  tripId: string;
+  start: string;
+  end: string;
+}
+
 export interface DayReport {
   date: string;
   tzOffset: string;
   summary: DaySummary;
   trips: Trip[];
+  /** Занятое время в этот и следующий день — для выбора времени в форме */
+  busy: BusyInterval[];
 }
 
 export interface DayOverview {

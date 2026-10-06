@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShallow } from "zustand/react/shallow";
-import { AddTripSheet } from "../components/AddTripSheet";
 import { DayNavigator } from "../components/DayNavigator";
 import { SummaryCard } from "../components/SummaryCard";
 import { TripListItem } from "../components/TripListItem";
@@ -132,7 +131,6 @@ export function DayScreen() {
           </Pressable>
         </View>
       </View>
-      <AddTripSheet />
     </View>
   );
 }

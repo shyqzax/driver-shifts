@@ -1,5 +1,6 @@
 import { randomUUID } from "expo-crypto";
 import type { StateCreator } from "zustand";
+import { busyRangesOfDay, isEndStillAllowed } from "../../domain/freeTime";
 import {
   buildTripFromDraft,
   createDraft,
@@ -8,6 +9,7 @@ import {
   type DraftField,
   type TripDraft,
 } from "../../domain/tripDraft";
+import type { DayReport } from "../../types/api";
 import { tripsApi, TripsApiError } from "../../services/tripsApi";
 import { formatMoney, formatTimeInZone } from "../../utils/format";
 import type { AppState } from "../useAppStore";
@@ -46,12 +48,29 @@ function describeSubmitError(error: unknown, tzOffset: string): string {
   return error.message;
 }
 
-function withoutErrorsFor(errors: DraftErrors, fields: readonly string[]): DraftErrors {
+const ERROR_FIELD_BY_DRAFT_KEY: Record<keyof EditableDraftFields, DraftField> = {
+  startMinute: "start",
+  endMinute: "end",
+  amount: "amount",
+  commission: "commission",
+  payment: "payment",
+};
+
+function withoutErrorsFor(errors: DraftErrors, patch: Partial<EditableDraftFields>): DraftErrors {
   const remaining: DraftErrors = { ...errors };
-  for (const field of fields) {
-    delete remaining[field as DraftField];
+  for (const key of Object.keys(patch) as (keyof EditableDraftFields)[]) {
+    delete remaining[ERROR_FIELD_BY_DRAFT_KEY[key]];
   }
   return remaining;
+}
+
+/** Новое начало может «съесть» выбранное окончание — тогда его надо выбрать заново. */
+function keepEndIfStillAllowed(draft: TripDraft, report: DayReport | null): TripDraft {
+  if (draft.startMinute === null || draft.endMinute === null || !report) return draft;
+  const ranges = busyRangesOfDay(report.date, report.tzOffset, report.busy);
+  return isEndStillAllowed(draft.startMinute, draft.endMinute, ranges)
+    ? draft
+    : { ...draft, endMinute: null };
 }
 
 export const createAddTripSlice: StateCreator<AppState, [], [], AddTripSlice> = (set, get) => ({
@@ -80,11 +99,10 @@ export const createAddTripSlice: StateCreator<AppState, [], [], AddTripSlice> = 
   updateDraft(patch) {
     const draft = get().draft;
     if (!draft) return;
-    // Галочка «после полуночи» меняет дату окончания — старая ошибка у него больше не верна
-    const touchedFields = Object.keys(patch).map((key) => (key === "endsNextDay" ? "endTime" : key));
+    const updated = { ...draft, ...patch };
     set({
-      draft: { ...draft, ...patch },
-      draftErrors: withoutErrorsFor(get().draftErrors, touchedFields),
+      draft: "startMinute" in patch ? keepEndIfStillAllowed(updated, get().dayReport) : updated,
+      draftErrors: withoutErrorsFor(get().draftErrors, patch),
       submitMessage: null,
     });
   },
@@ -112,6 +130,10 @@ export const createAddTripSlice: StateCreator<AppState, [], [], AddTripSlice> = 
         draftErrors: mapServerFieldErrors(fields),
         submitMessage: describeSubmitError(error, tzOffset),
       });
+      // Время заняли с другого устройства — обновляем день, чтобы выбор времени это учёл
+      if (error instanceof TripsApiError && error.body?.code === "trip_overlap") {
+        await get().selectDate(draft.date);
+      }
     }
   },
 });
