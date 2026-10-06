@@ -10,6 +10,11 @@ export function dayKeyOf(instantMs: number, tzOffsetMinutes: number): DayKey {
   return new Date(instantMs + minutesToMs(tzOffsetMinutes)).toISOString().slice(0, 10);
 }
 
+/** Полночь дня `dayKey` по часам бизнеса — момент в миллисекундах. */
+export function dayStartMs(dayKey: DayKey, tzOffsetMinutes: number): number {
+  return Date.parse(`${dayKey}T00:00:00Z`) - minutesToMs(tzOffsetMinutes);
+}
+
 export function isValidDayKey(text: string): boolean {
   if (!DAY_KEY_PATTERN.test(text)) return false;
   // Несуществующая дата (2026-02-30) после разбора «перетекает» в другой день

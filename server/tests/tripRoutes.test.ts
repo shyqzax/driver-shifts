@@ -39,6 +39,49 @@ describe("API дня", () => {
     expect(response.json()).toMatchObject({ trips: [], summary: { tripsCount: 0, revenue: 0 } });
   });
 
+  it("занятое время: ночная поездка вчера и утро завтра попадают, дальние дни — нет", async () => {
+    const yesterdayNight = makeTrip({
+      id: "yesterday-night",
+      start: "2026-09-30T23:30:00+05:00",
+      end: "2026-10-01T00:20:00+05:00",
+    });
+    const yesterdayEvening = makeTrip({
+      id: "yesterday-evening",
+      start: "2026-09-30T20:00:00+05:00",
+      end: "2026-09-30T20:30:00+05:00",
+    });
+    const tomorrowMorning = makeTrip({
+      id: "tomorrow-morning",
+      start: "2026-10-02T07:00:00+05:00",
+      end: "2026-10-02T07:30:00+05:00",
+    });
+    const dayAfterTomorrow = makeTrip({
+      id: "day-after",
+      start: "2026-10-03T07:00:00+05:00",
+      end: "2026-10-03T07:30:00+05:00",
+    });
+    const appWithNeighbours = await makeTestApp(
+      new InMemoryTripRepository([
+        tomorrowMorning,
+        TASK_EXAMPLE_TRIPS[0]!,
+        yesterdayNight,
+        yesterdayEvening,
+        dayAfterTomorrow,
+      ])
+    );
+
+    const response = await appWithNeighbours.inject({ method: "GET", url: "/v1/days/2026-10-01" });
+
+    expect(response.json().busy).toEqual([
+      { tripId: "yesterday-night", start: yesterdayNight.start, end: yesterdayNight.end },
+      { tripId: "t1", start: TASK_EXAMPLE_TRIPS[0]!.start, end: TASK_EXAMPLE_TRIPS[0]!.end },
+      { tripId: "tomorrow-morning", start: tomorrowMorning.start, end: tomorrowMorning.end },
+    ]);
+    // Ночная поездка вчерашнего дня занимает время, но в список поездок дня не входит
+    expect(response.json().trips.map((trip: { id: string }) => trip.id)).toEqual(["t1"]);
+    await appWithNeighbours.close();
+  });
+
   it("список дней с поездками", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/days" });
     expect(response.json()).toEqual([{ date: "2026-10-01", tripsCount: 3 }]);

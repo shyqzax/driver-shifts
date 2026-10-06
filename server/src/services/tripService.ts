@@ -1,4 +1,4 @@
-import { tripDayKey, tripInterval, type DayKey } from "../domain/businessDay";
+import { dayStartMs, tripDayKey, tripInterval, type DayKey } from "../domain/businessDay";
 import { computeDaySummary, type DaySummary } from "../domain/daySummary";
 import { toMinorUnits } from "../domain/money";
 import { formatTzOffset } from "../domain/time";
@@ -6,13 +6,30 @@ import type { Trip } from "../domain/trip";
 import { validateTrip, type TripFieldErrors } from "../domain/validateTrip";
 import type { TripRepository } from "../storage/tripRepository";
 
+/** Время, занятое уже записанной поездкой: новую сюда поставить нельзя. */
+export interface BusyInterval {
+  tripId: string;
+  start: string;
+  end: string;
+}
+
 export interface DayReport {
   date: DayKey;
   /** Пояс, в котором считаются дни: клиенту по нему показывать время поездок */
   tzOffset: string;
   summary: DaySummary;
   trips: Trip[];
+  /**
+   * Занятое время в этот и следующий день — для выбора времени в форме.
+   * Сюда попадает и ночная поездка вчерашнего дня, которая заходит за
+   * полночь, и поездки завтрашнего утра: до них может длиться поездка,
+   * начатая сегодня поздно вечером.
+   */
+  busy: BusyInterval[];
 }
+
+const BUSY_WINDOW_DAYS = 2;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export interface DayOverview {
   date: DayKey;
@@ -75,6 +92,7 @@ export class TripService {
       tzOffset: formatTzOffset(this.tzOffsetMinutes),
       summary: computeDaySummary(trips),
       trips,
+      busy: this.listBusyIntervals(date),
     };
   }
 
@@ -101,6 +119,17 @@ export class TripService {
 
     await this.repository.insert(trip);
     return { kind: "created", trip, date };
+  }
+
+  private listBusyIntervals(date: DayKey): BusyInterval[] {
+    const windowStartMs = dayStartMs(date, this.tzOffsetMinutes);
+    const windowEndMs = windowStartMs + BUSY_WINDOW_DAYS * MS_PER_DAY;
+    return this.repository
+      .all()
+      .map((trip) => ({ trip, interval: tripInterval(trip) }))
+      .filter(({ interval }) => interval.startMs < windowEndMs && windowStartMs < interval.endMs)
+      .sort((left, right) => left.interval.startMs - right.interval.startMs)
+      .map(({ trip }) => ({ tripId: trip.id, start: trip.start, end: trip.end }));
   }
 
   /** Встык (одна закончилась ровно тогда, когда началась другая) — не пересечение. */
